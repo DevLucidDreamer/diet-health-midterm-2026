@@ -24,16 +24,22 @@ const QuizCore = (() => {
         const correct=grade(q,r.value);
         if(!correct && r.wrongAttempts===0) continue;
         result.records[q.id]={correct,value:r.value,attempts:r.attempts,wrongAttempts:r.wrongAttempts,updatedAt:typeof r.updatedAt==='string'?r.updatedAt:''};
+        if(r.pending===true) result.records[q.id].pending=true;
       }
       result.bookmarks=Array.isArray(parsed.bookmarks)?[...new Set(parsed.bookmarks.filter(id=>questions.some(q=>q.id===id)))]:[];
       return result;
     } catch { return empty(); }
   }
   function stats(records) {
-    const values=Object.values(records);
+    const values=Object.values(records).filter(r=>!r.pending);
     const correct=values.filter(r=>r.correct).length;
     return {done:values.length,correct,wrong:values.length-correct,rate:values.length?Math.round(correct/values.length*100):null};
   }
-  return {normalize,grade,record,restore,stats};
+  function restart(state, questions) {
+    const records={...state.records};
+    for(const q of questions) if(records[q.id]) records[q.id]={...records[q.id],pending:true};
+    return {...state,records};
+  }
+  return {normalize,grade,record,restore,stats,restart};
 })();
 if(typeof module!=='undefined') module.exports=QuizCore;

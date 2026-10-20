@@ -22,11 +22,11 @@
       const r=state.records[q.id];
       if(category!=='all' && q.category!==category) return false;
       if(search && !QuizCore.normalize(`${QuizBanks.number(q)} ${q.prompt} ${q.category} ${QuizBanks.code(q)}`).includes(search)) return false;
-      if(view==='wrong') return $('#ever-wrong').checked ? r?.wrongAttempts>0 : r && !r.correct;
+      if(view==='wrong') return $('#ever-wrong').checked ? r?.wrongAttempts>0 : r && !r.pending && !r.correct;
       if(view==='answers') return true;
-      if(status==='unanswered') return !r;
-      if(status==='wrong') return r && !r.correct;
-      if(status==='correct') return r?.correct;
+      if(status==='unanswered') return !r || r.pending;
+      if(status==='wrong') return r && !r.pending && !r.correct;
+      if(status==='correct') return r && !r.pending && r.correct;
       if(status==='bookmark') return state.bookmarks.includes(q.id);
       return true;
     });
@@ -42,6 +42,7 @@
     $('#progress-bar').style.width=`${s.done/total*100}%`;
     $('#progress-text').textContent=s.done===total?`${total}문항을 모두 학습했어요!`:s.done?`${total-s.done}문항 더 풀면 한 바퀴 완성`:'오늘의 한 문제부터 시작해요';
     $('#storage-warning').hidden=canStore;
+    $('#restart').hidden=!isStudy() || s.done!==total;
   }
   function typeLabel(q){return {ox:'O / X',single:'객관식',multi:'복수선택',text:'단답형'}[q.type];}
   function answerLabel(q){return q.type==='text'?q.answerText:q.answer.map(i=>q.options[i]).join(' / ');}
@@ -64,7 +65,7 @@
     </section>`;
   }
   function questionHTML(q, ids) {
-    const record=state.records[q.id],answered=record && !retry,index=ids.indexOf(q.id),isBookmarked=state.bookmarks.includes(q.id);
+    const record=state.records[q.id],answered=record && !record.pending && !retry,index=ids.indexOf(q.id),isBookmarked=state.bookmarks.includes(q.id);
     let answers='';
     if(q.type==='text') {
       answers=answered?'':`<form id="short-form" class="short-form"><label class="sr-only" for="short-answer">정답 입력</label><input id="short-answer" type="text" maxlength="100" placeholder="정답을 입력하세요" autocomplete="off" required><button class="primary-btn" type="submit">정답 확인</button></form>`;
@@ -91,7 +92,7 @@
     $('#list-label').innerHTML=`${view==='wrong'?($('#ever-wrong').checked?'틀렸던 모든 문제':'복습할 오답'):view==='answers'?'정답·해설 모아보기':QuizBanks.label(activeBank())} <strong>${list.length}</strong>`;
     const index=ids.indexOf(current);
     $('#position-label').textContent=view==='answers'?'해설을 펼쳐 확인하세요':index>=0?`${String(index+1).padStart(2,'0')} / ${String(list.length).padStart(2,'0')}`:hold?'복습 완료':'';
-    $('#question-map').innerHTML=list.map(q=>{const r=state.records[q.id];return `<button class="map-btn ${r?(r.correct?'correct':'wrong'):''} ${q.id===current?'current':''} ${state.bookmarks.includes(q.id)?'bookmarked':''}" data-jump="${q.id}" aria-label="${esc(QuizBanks.code(q))}번 ${r?(r.correct?'정답':'오답'):'미학습'}" ${q.id===current?'aria-current="true"':''}>${activeBank()==='all'?(q.bank==='jokbo'?'족':'예'):''}${String(QuizBanks.number(q)).padStart(2,'0')}</button>`;}).join('');
+    $('#question-map').innerHTML=list.map(q=>{const r=state.records[q.id],answered=r&&!r.pending;return `<button class="map-btn ${answered?(r.correct?'correct':'wrong'):''} ${q.id===current?'current':''} ${state.bookmarks.includes(q.id)?'bookmarked':''}" data-jump="${q.id}" aria-label="${esc(QuizBanks.code(q))}번 ${answered?(r.correct?'정답':'오답'):'미학습'}" ${q.id===current?'aria-current="true"':''}>${activeBank()==='all'?(q.bank==='jokbo'?'족':'예'):''}${String(QuizBanks.number(q)).padStart(2,'0')}</button>`;}).join('');
     if(view==='answers') {
       $('#content').innerHTML=list.length?list.map(q=>`<details class="answer-item" id="answer-${q.id}"><summary><span class="q-number">${esc(QuizBanks.code(q))}</span><span class="answer-summary">${esc(q.prompt)}<br><span class="badge">${esc(q.category)}</span>${q.bank==='lecture'?`<span class="badge lecture-badge">${q.lecture}강</span>`:''}${q.tag?`<span class="badge modified">${esc(q.tag)}</span>`:''}</span><span class="answer-expand" aria-hidden="true">+</span></summary>${explanation(q,null,true)}<button class="primary-btn" data-practice="${q.id}">이 문제 다시 풀기 →</button></details>`).join(''):emptyHTML();
       return;
@@ -102,7 +103,7 @@
   function emptyHTML(){const isWrong=view==='wrong',hasFilter=$('#category').value!=='all'||$('#search').value||isStudy()&&$('#status').value!=='all'||activeBank()==='lecture'&&$('#lecture').value!=='all';return `<div class="empty"><span aria-hidden="true">${isWrong?'✓':'◒'}</span><h2>${hasFilter?'조건에 맞는 문제가 없어요':isWrong?'복습할 오답이 없어요':'아직 선택된 문제가 없어요'}</h2><p>${hasFilter?'다른 강의·주제를 선택하거나 검색어를 지워 보세요.':isWrong?'문제를 틀리면 여기에 자동으로 모아 드려요.<br>다시 맞힌 문제는 “한 번이라도 틀린 문제”에서 확인할 수 있어요.':'필터를 바꾸고 학습을 이어가세요.'}</p><button class="primary-btn" data-action="all">${activeBank()==='lecture'?'예상문제':'족보'} 학습하기 →</button></div>`;}
   function submit(value) {
     const q=QUESTIONS.find(q=>q.id===current);
-    if(!q || (state.records[q.id] && !retry)) return;
+    if(!q || (state.records[q.id] && !state.records[q.id].pending && !retry)) return;
     if(q.type==='text' && !QuizCore.normalize(value)) return;
     if(q.type!=='text' && !value.length) return;
     state.records[q.id]=QuizCore.record(q,value,state.records[q.id]);retry=false;selected=[];save();render(true);
@@ -113,7 +114,22 @@
   function navigate(delta){const ids=filtered().map(q=>q.id),idx=ids.indexOf(current);if(delta>0 && idx===ids.length-1 && idx>=0){showResults();return;}current=ids[Math.max(0,Math.min(ids.length-1,idx+delta))]||null;retry=false;selected=[];render();}
   function resetFilters(){$('#category').value='all';$('#status').value='all';$('#search').value='';$('#lecture').value='all';}
   function openDialog(title,body){$('#dialog-title').textContent=title;$('#dialog-body').innerHTML=body;$('#info-dialog').showModal();}
-  function showResults(){const bank=activeBank(),s=statsForPool(),total=pool().length;openDialog(`${QuizBanks.label(bank)} 학습 결과`,`<p><strong>${s.done} / ${total}문항</strong>을 학습했어요.</p><p>최근 풀이 기준 정답 ${s.correct}개 · 오답 ${s.wrong}개${s.rate===null?'':` · 정답률 ${s.rate}%`}</p><p>${s.done===total?'한 바퀴 완성! 오답을 다시 풀며 기억을 단단하게 만들어 보세요.':'아직 풀지 않은 문제도 차근차근 이어가 보세요.'}</p><div class="dialog-actions"><button class="small-btn" id="results-continue">계속 학습하기</button><button class="primary-btn" id="results-wrong">오답 복습하기</button></div>`);$('#results-continue').onclick=()=>{$('#info-dialog').close();setView(bank==='lecture'?'lecture':'practice');$('#status').value='unanswered';render();};$('#results-wrong').onclick=()=>{$('#info-dialog').close();setView('wrong');$('#scope').value=bank;render();};}
+  function restartBank(bank){
+    state=QuizCore.restart(state,QuizBanks.select(QUESTIONS,bank));
+    order=QUESTIONS.map(q=>q.id);current=QuizBanks.select(QUESTIONS,bank)[0]?.id||null;
+    save();if($('#info-dialog').open)$('#info-dialog').close();
+    setView(bank==='lecture'?'lecture':'practice');
+    showToast('첫 문제부터 다시 시작해요. 북마크와 누적 오답 이력은 유지됩니다.');
+    $('#short-answer')?.focus();
+  }
+  function showResults(){
+    const bank=activeBank(),s=statsForPool(),total=pool().length,complete=s.done===total;
+    openDialog(`${QuizBanks.label(bank)} 학습 결과`,`<p><strong>${s.done} / ${total}문항</strong>을 학습했어요.</p><p>최근 풀이 기준 정답 ${s.correct}개 · 오답 ${s.wrong}개${s.rate===null?'':` · 정답률 ${s.rate}%`}</p><p>${complete?'한 바퀴 완성! 전체 문제를 처음부터 다시 풀거나 오답을 복습해 보세요.':'아직 풀지 않은 문제도 차근차근 이어가 보세요.'}</p>${complete?'<p>전체 다시 풀기를 누르면 선택한 문제집의 진도를 새로 시작합니다. 북마크·풀이 횟수·누적 오답 이력은 유지됩니다.</p>':''}<div class="dialog-actions">${complete?'<button class="primary-btn" id="results-restart">전체 다시 풀기 ↻</button>':'<button class="primary-btn" id="results-continue">계속 학습하기</button>'}<button class="small-btn" id="results-wrong">오답 복습하기</button></div>`);
+    if(complete)$('#results-restart').onclick=()=>restartBank(bank);
+    else $('#results-continue').onclick=()=>{$('#info-dialog').close();setView(bank==='lecture'?'lecture':'practice');$('#status').value='unanswered';render();};
+    $('#results-wrong').onclick=()=>{$('#info-dialog').close();setView('wrong');$('#scope').value=bank;render();};
+  }
+  $('#restart').onclick=()=>restartBank(activeBank());
   document.querySelector('.tabs').addEventListener('click',event=>{const button=event.target.closest('[data-view]');if(button)setView(button.dataset.view);});
   for(const selector of ['#category','#status','#ever-wrong','#lecture','#scope']) $(selector).addEventListener('change',()=>{if(selector==='#scope')resetFilters();retry=false;selected=[];render();});
   $('#search').addEventListener('input',()=>{retry=false;selected=[];render();});
@@ -132,7 +148,7 @@
     if(action==='all')setView(activeBank()==='lecture'?'lecture':'practice');
   });
   $('#shuffle').onclick=()=>{for(let i=order.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[order[i],order[j]]=[order[j],order[i]];}current=filtered()[0]?.id||null;retry=false;selected=[];render();showToast('문제 순서를 섞었어요. 학습 기록은 유지됩니다.');};
-  $('#guide-open').onclick=()=>openDialog('한입 복습 사용법',`<ol><li><strong>족보학습</strong>에는 족보에서 가져온 30문항만 있어요. 빠진 보기 등을 복원한 문항은 표시되어 있습니다.</li><li><strong>강의자료 예상문제</strong>는 제공된 1~5강을 바탕으로 새로 만든 100문항이에요. 강의 선택에서 원하는 강의만 풀 수 있어요. 실제 출제를 보장하지는 않습니다.</li><li>답을 고르면 바로 채점됩니다. 복수선택은 모든 답 선택 후 채점, 단답형은 입력 후 정답 확인을 눌러 주세요.</li><li><strong>오답노트</strong>에서 문제집을 골라 오답만 보세요. 다시 맞히면 현재 오답에서 빠지고 “한 번이라도 틀린 문제”에 이력이 남습니다.</li><li><strong>정답·해설</strong>에서 답과 강의 근거를 확인하거나 “이 문제 다시 풀기”를 누르세요.</li></ol><p>상단 진도와 정답률은 <strong>선택한 문제집의 최근 풀이 결과</strong> 기준입니다. 강의·주제 필터는 문제 목록을 좁히며, 진도는 해당 문제집 전체 기준으로 표시됩니다.</p><p>기존 족보 풀이 기록은 유지됩니다. 기록은 현재 브라우저에만 저장되며 다른 기기·브라우저로 동기화되지 않습니다. 초기화는 두 문제집의 기록을 모두 지웁니다.</p><p>☆로 북마크하고 기록을 보관용 JSON으로 내려받을 수 있습니다. 모바일에서는 하단의 내려받기 버튼을 사용하세요.</p>`);
+  $('#guide-open').onclick=()=>openDialog('한입 복습 사용법',`<ol><li><strong>족보학습</strong>에는 족보에서 가져온 30문항만 있어요. 빠진 보기 등을 복원한 문항은 표시되어 있습니다.</li><li><strong>강의자료 예상문제</strong>는 제공된 1~5강을 바탕으로 새로 만든 100문항이에요. 강의 선택에서 원하는 강의만 풀 수 있어요. 실제 출제를 보장하지는 않습니다.</li><li>답을 고르면 바로 채점됩니다. 복수선택은 모든 답 선택 후 채점, 단답형은 입력 후 정답 확인을 눌러 주세요.</li><li><strong>오답노트</strong>에서 문제집을 골라 오답만 보세요. 다시 맞히면 현재 오답에서 빠지고 “한 번이라도 틀린 문제”에 이력이 남습니다.</li><li><strong>정답·해설</strong>에서 답과 강의 근거를 확인하거나 “이 문제 다시 풀기”를 누르세요.</li><li>문제집을 모두 풀면 학습 결과 또는 상단 진도의 <strong>전체 다시 풀기</strong>로 첫 문제부터 다시 시작하세요. 선택한 문제집의 진도만 새로 시작하며 북마크·풀이 횟수·누적 오답 이력은 유지됩니다.</li></ol><p>상단 진도와 정답률은 <strong>선택한 문제집의 최근 풀이 결과</strong> 기준입니다. 강의·주제 필터는 문제 목록을 좁히며, 진도는 해당 문제집 전체 기준으로 표시됩니다.</p><p>기존 족보 풀이 기록은 유지됩니다. 기록은 현재 브라우저에만 저장되며 다른 기기·브라우저로 동기화되지 않습니다. 초기화는 두 문제집의 기록을 모두 지웁니다.</p><p>☆로 북마크하고 기록을 보관용 JSON으로 내려받을 수 있습니다. 모바일에서는 하단의 내려받기 버튼을 사용하세요.</p>`);
   $('#sources-open').onclick=()=>openDialog('자료와 정답 작성 기준',`<h3>학습 범위</h3><ul><li>중간 족보: 1~7쪽에 수록된 30문항</li><li>1·2강: 전통식사·섭취현황·체격·기대수명·건강수명, PDF 31쪽</li><li>3강: 영양소의 종류 및 건강한 식사, PDF 36쪽</li><li>4강: 지방·미량영양소·물, PDF 48쪽</li><li>5강: 영양소의 소화·흡수 및 과정, PDF 35쪽</li></ul><p>1~5강은 PDF 파일 4개입니다. 1·2강은 합본이므로 2강의 근거도 그 합본의 PDF 페이지 번호를 사용합니다.</p><h3>두 문제집의 구분</h3><p>족보학습 30문항에는 새 예상문제를 섞지 않았습니다. 강의자료 예상문제 100문항은 강의의 핵심 개념·계산·기능·비교를 바탕으로 새로 작성했습니다. 강의별 10·10·25·35·20문항이며 실제 시험 출제 여부나 교수자의 공식 답안을 뜻하지 않습니다.</p><h3>족보의 복원·보정</h3><p>12·13·16·26번 누락 보기를 보완하고, 27번은 복수선택, 28번은 객관식으로 복원했습니다. 17번은 강의 도표의 비교 범위로 한정하고 18번은 근거가 불분명한 “두 배”를 제외했으며, 29번은 “지방산”을 “중성지방”으로 보정했습니다. 원문과 차이는 각 해설에서 확인할 수 있습니다.</p><p>원본 PDF는 공개 사이트에 업로드하지 않았습니다. 해설의 쪽수는 PDF 뷰어 기준입니다. 강의의 일반화된 표현은 시험 학습 기준을 명시하거나 조건을 구체화했습니다.</p><h3>보충 출처</h3><ul>${Object.values(sources).filter(s=>s.url).map(s=>`<li><a href="${esc(s.url)}" target="_blank" rel="noopener noreferrer">${esc(s.label)} ↗</a></li>`).join('')}</ul><p>업데이트: 2026년 10월 20일</p>`);
   $('#reset').onclick=()=>{openDialog('학습 기록을 초기화할까요?',`<p>이 브라우저에 저장된 정답·오답, 풀이 횟수와 북마크를 모두 지웁니다. 초기화 전에 필요하면 학습 기록을 내려받아 보관하세요.</p><div class="dialog-actions"><button class="small-btn" id="reset-cancel">취소</button><button class="primary-btn" id="reset-confirm">기록 초기화</button></div>`);$('#reset-cancel').onclick=()=>$('#info-dialog').close();$('#reset-confirm').onclick=()=>{state=QuizCore.restore(null,QUESTIONS);order=QUESTIONS.map(q=>q.id);current=1;retry=false;selected=[];save();resetFilters();$('#ever-wrong').checked=false;$('#info-dialog').close();setView('practice');showToast('학습 기록을 초기화했어요');};};
   $('#export').onclick=()=>{const blob=new Blob([JSON.stringify({exportedAt:new Date().toISOString(),...state},null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download='food-wellness-study-record.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),2000);showToast('학습 기록을 내려받았어요');};
