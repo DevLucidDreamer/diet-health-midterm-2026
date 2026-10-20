@@ -12,3 +12,7 @@
 
 /* O/X symbols keep the same shape after grading; only their color changes. */
 .ox .option.is-correct .option-index{color:#407652}.ox .option.is-wrong .option-index{color:#b66547}
+
+/* Latest exam information stays separate from the original banks. */
+.fresh-info{font-size:11px;color:#53654d;margin-top:10px}.fresh-info summary{cursor:pointer;text-decoration:underline;text-underline-offset:3px}.fresh-info p{max-width:920px}.tabs{flex-wrap:wrap;gap:0 20px}.workspace-top{gap:16px}#dialog-body .dialog-actions{flex-wrap:wrap}
+@media(max-width:720px){.fresh-info{font-size:10px}.workspace-top{gap:0}.tabs{gap:0 14px}.tab[data-view="fresh"]{color:var(--green);font-weight:750}}
